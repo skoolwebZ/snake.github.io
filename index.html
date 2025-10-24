@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mini Slither.io with AI</title>
+<style>
+body { margin: 0; overflow: hidden; background: #111; }
+canvas { display: block; margin: auto; background: #222; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const CELL_SIZE = 20;
+
+// Utility function for sound
+function playSound(freq, duration) {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    oscillator.connect(audioCtx.destination);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + duration);
+}
+
+// Player snake
+let player = {body:[{x:10,y:10}], dir:{x:1,y:0}, score:0, color:'#0f0', alive:true};
+
+// AI snakes
+let aiSnakes = [
+    {body:[{x:30,y:5}], dir:{x:1,y:0}, score:0, color:'#0ff', alive:true},
+    {body:[{x:50,y:15}], dir:{x:0,y:1}, score:0, color:'#ff0', alive:true}
+];
+
+// Food
+let food = [];
+
+// Spawn food
+function spawnFood(count=10){
+    for(let i=0;i<count;i++){
+        food.push({
+            x:Math.floor(Math.random()*(canvas.width/CELL_SIZE)),
+            y:Math.floor(Math.random()*(canvas.height/CELL_SIZE))
+        });
+    }
+}
+
+// Direction helper for AI
+function getDirectionToFood(snake, food) {
+    let head = snake.body[0];
+    let nearest = food[0];
+    let minDist = Math.hypot(head.x-nearest.x, head.y-nearest.y);
+    for(let f of food){
+        let d = Math.hypot(head.x-f.x, head.y-f.y);
+        if(d<minDist){ minDist=d; nearest=f; }
+    }
+    let dx = nearest.x - head.x;
+    let dy = nearest.y - head.y;
+    if(Math.abs(dx) > Math.abs(dy)) return {x:dx>0?1:-1, y:0};
+    else return {x:0, y:dy>0?1:-1};
+}
+
+// Update snake
+function updateSnake(snake){
+    if(!snake.alive) return;
+    const head = {x:snake.body[0].x + snake.dir.x, y:snake.body[0].y + snake.dir.y};
+    snake.body.unshift(head);
+
+    // Check food collision
+    for(let i=0;i<food.length;i++){
+        if(head.x===food[i].x && head.y===food[i].y){
+            snake.score++;
+            playSound(440,0.1);
+            food.splice(i,1);
+            spawnFood(1);
+            break;
+        }
+    }
+
+    // Otherwise move tail
+    if(snake.body.length > snake.score + 1){
+        snake.body.pop();
+    }
+
+    // Check collisions with walls
+    if(head.x<0 || head.y<0 || head.x>=canvas.width/CELL_SIZE || head.y>=canvas.height/CELL_SIZE){
+        snake.alive=false;
+        playSound(100,0.5);
+    }
+
+    // Check self-collision
+    for(let i=1;i<snake.body.length;i++){
+        if(head.x===snake.body[i].x && head.y===snake.body[i].y){
+            snake.alive=false;
+            playSound(100,0.5);
+        }
+    }
+
+    // Check collisions with other snakes
+    for(let other of aiSnakes.concat([player])){
+        if(other===snake) continue;
+        for(let segment of other.body){
+            if(head.x===segment.x && head.y===segment.y){
+                snake.alive=false;
+                playSound(100,0.5);
+            }
+        }
+    }
+}
+
+// AI movement
+function updateAI(){
+    for(let ai of aiSnakes){
+        if(!ai.alive) continue;
+        ai.dir = getDirectionToFood(ai, food);
+    }
+}
+
+// Draw everything
+function draw(){
+    ctx.fillStyle='#222';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Draw food
+    ctx.fillStyle='#f00';
+    for(let f of food){
+        ctx.fillRect(f.x*CELL_SIZE,f.y*CELL_SIZE,CELL_SIZE,CELL_SIZE);
+    }
+
+    // Draw player
+    if(player.alive){
+        ctx.fillStyle=player.color;
+        for(let seg of player.body){
+            ctx.fillRect(seg.x*CELL_SIZE,seg.y*CELL_SIZE,CELL_SIZE,CELL_SIZE);
+        }
+    }
+
+    // Draw AI snakes
+    for(let ai of aiSnakes){
+        if(!ai.alive) continue;
+        ctx.fillStyle=ai.color;
+        for(let seg of ai.body){
+            ctx.fillRect(seg.x*CELL_SIZE,seg.y*CELL_SIZE,CELL_SIZE,CELL_SIZE);
+        }
+    }
+
+    // Draw scores
+    ctx.fillStyle='#fff';
+    ctx.font='20px Arial';
+    ctx.fillText('Player Score: '+player.score,10,30);
+    aiSnakes.forEach((ai,i)=>{
+        ctx.fillText('AI'+(i+1)+' Score: '+ai.score,10,60+30*i);
+    });
+
+    if(!player.alive){
+        ctx.fillStyle='red';
+        ctx.font='50px Arial';
+        ctx.fillText('Game Over',canvas.width/2-150,canvas.height/2);
+    }
+}
+
+// Game loop
+function gameLoop(){
+    if(player.alive) updateSnake(player);
+    updateAI();
+    for(let ai of aiSnakes) updateSnake(ai);
+    draw();
+    setTimeout(gameLoop,100);
+}
+
+// Controls
+window.addEventListener('keydown',e=>{
+    if(e.key==='ArrowUp' && player.dir.y===0) player.dir={x:0,y:-1};
+    if(e.key==='ArrowDown' && player.dir.y===0) player.dir={x:0,y:1};
+    if(e.key==='ArrowLeft' && player.dir.x===0) player.dir={x:-1,y:0};
+    if(e.key==='ArrowRight' && player.dir.x===0) player.dir={x:1,y:0};
+    if(e.key==='w' && player.dir.y===0) player.dir={x:0,y:-1};
+    if(e.key==='s' && player.dir.y===0) player.dir={x:0,y:1};
+    if(e.key==='a' && player.dir.x===0) player.dir={x:-1,y:0};
+    if(e.key==='d' && player.dir.x===0) player.dir={x:1,y:0};
+});
+
+spawnFood(20);
+gameLoop();
+</script>
+</body>
+</html>
